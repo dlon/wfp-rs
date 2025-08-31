@@ -6,13 +6,7 @@ A safe Rust library for the Windows Filtering Platform (WFP) API, providing an e
 
 ## Adding wfp-rs to your project
 
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-wfp = "0.1.0"
-log = "0.4"  # Optional, for logging
-```
+Add it to your `Cargo.toml`: `cargo add wfp`
 
 ## Quick start
 

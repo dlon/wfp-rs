@@ -49,6 +49,8 @@
 //!
 //! Run examples with: `cargo run --example <example>`
 
+#![cfg(target_os = "windows")]
+
 mod action;
 mod condition;
 mod engine;
