@@ -92,7 +92,9 @@ impl FilterEngineBuilder {
     ///
     /// Dynamic filters are automatically removed when the session is closed,
     /// making them ideal for temporary filtering rules that don't need to
-    /// persist across system reboots. This sets the [`FWPM_SESSION_FLAG_DYNAMIC`] flag.
+    /// persist when the session ends.
+    ///
+    /// This sets the [`FWPM_SESSION_FLAG_DYNAMIC`] flag.
     ///
     /// [`FWPM_SESSION_FLAG_DYNAMIC`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_session0
     pub fn dynamic(mut self) -> Self {

@@ -49,7 +49,6 @@ use crate::transaction::Transaction;
 ///
 /// [`FWPM_SUBLAYER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_sublayer0
 /// [Filter Arbitration]: https://docs.microsoft.com/en-us/windows/win32/fwp/filter-arbitration
-// TODO: Double check if the required fields are required
 #[derive(Clone)]
 pub struct SubLayerBuilder<Name> {
     sublayer: FWPM_SUBLAYER0,
