@@ -6,6 +6,7 @@ use std::iter;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
 use std::ptr;
+use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_SUBLAYER0;
@@ -53,15 +54,14 @@ use crate::transaction::Transaction;
 pub struct SubLayerBuilder<Name> {
     sublayer: FWPM_SUBLAYER0,
 
-    display_data_name_buffer: Vec<u16>,
-    display_data_desc_buffer: Vec<u16>,
+    display_data_name_buffer: Arc<[u16]>,
+    display_data_desc_buffer: Arc<[u16]>,
 
     _pd: std::marker::PhantomData<Name>,
 }
 
 /// Type-level marker indicating that a sublayer name has not been set.
 #[doc(hidden)]
-#[derive(Default)]
 pub struct SubLayerBuilderMissingName;
 
 /// Type-level marker indicating that a sublayer name has been set.
@@ -101,7 +101,8 @@ impl<Name> SubLayerBuilder<Name> {
             .encode_wide()
             .chain(iter::once(0u16))
             .collect();
-        self.sublayer.displayData.name = self.display_data_name_buffer.as_mut_ptr();
+        // SAFETY: The data is never mutated
+        self.sublayer.displayData.name = self.display_data_name_buffer.as_ptr() as *mut _;
         SubLayerBuilder {
             sublayer: self.sublayer,
             display_data_name_buffer: self.display_data_name_buffer,
@@ -124,7 +125,8 @@ impl<Name> SubLayerBuilder<Name> {
             .encode_wide()
             .chain(iter::once(0u16))
             .collect();
-        self.sublayer.displayData.description = self.display_data_desc_buffer.as_mut_ptr();
+        // SAFETY: The data is never mutated
+        self.sublayer.displayData.description = self.display_data_desc_buffer.as_ptr() as *mut _;
         SubLayerBuilder {
             sublayer: self.sublayer,
             display_data_name_buffer: self.display_data_name_buffer,

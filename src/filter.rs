@@ -6,6 +6,7 @@ use std::iter;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
 use std::ptr;
+use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_FILTER_CONDITION0;
@@ -52,8 +53,8 @@ use crate::transaction::Transaction;
 pub struct FilterBuilder<Name, Action> {
     filter: FWPM_FILTER0,
 
-    display_data_name_buffer: Vec<u16>,
-    display_data_desc_buffer: Vec<u16>,
+    display_data_name_buffer: Arc<[u16]>,
+    display_data_desc_buffer: Arc<[u16]>,
     conditions: Vec<Condition>,
 
     _pd: std::marker::PhantomData<(Name, Action)>,
@@ -61,7 +62,6 @@ pub struct FilterBuilder<Name, Action> {
 
 /// Type-level marker indicating that a filter name has not been set.
 #[doc(hidden)]
-#[derive(Default)]
 pub struct FilterBuilderMissingName;
 
 /// Type-level marker indicating that a filter name has been set.
@@ -111,7 +111,8 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             .encode_wide()
             .chain(iter::once(0u16))
             .collect();
-        self.filter.displayData.name = self.display_data_name_buffer.as_mut_ptr();
+        // SAFETY: The data is never mutated
+        self.filter.displayData.name = self.display_data_name_buffer.as_ptr() as *mut _;
         FilterBuilder {
             filter: self.filter,
             display_data_name_buffer: self.display_data_name_buffer,
@@ -135,7 +136,8 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             .encode_wide()
             .chain(iter::once(0u16))
             .collect();
-        self.filter.displayData.description = self.display_data_desc_buffer.as_mut_ptr();
+        // SAFETY: The data is never mutated
+        self.filter.displayData.description = self.display_data_desc_buffer.as_ptr() as *mut _;
         FilterBuilder {
             filter: self.filter,
             display_data_name_buffer: self.display_data_name_buffer,
