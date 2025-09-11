@@ -22,7 +22,6 @@ use crate::transaction::Transaction;
 /// (name and description) are provided before a sublayer can be created.
 /// The underlying sublayer is represented by the [`FWPM_SUBLAYER0`] structure.
 ///
-/// Sublayers are essential for controlling filter evaluation order through their weight values.
 /// For more information about how filters are prioritized and evaluated, see the
 /// [Filter Arbitration] documentation.
 ///

@@ -13,99 +13,89 @@ use windows_sys::{Win32::NetworkManagement::WindowsFilteringPlatform::*, core::G
 /// [WFP Layer Reference]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layer {
-    /// IPv4 inbound connections at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control incoming IPv4 connection attempts.
+    /// Used for authorizing accept requests for incoming TCP IPv4 connections, as well as incoming
+    /// non-TCP traffic based on the first packed received.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4`].
     ///
     /// [`FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     AcceptV4,
-    /// IPv6 inbound connections at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control incoming IPv6 connection attempts.
+    /// Used for authorizing accept requests for incoming TCP IPv6 connections, as well as incoming
+    /// non-TCP traffic based on the first packed received.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6`].
     ///
     /// [`FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     AcceptV6,
-    /// IPv4 outbound connections at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control outgoing IPv4 connection attempts.
+    /// Used for authorizing accept requests for outgoing TCP IPv4 connections, as well as outgoing
+    /// non-TCP traffic based on the first packed received.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_AUTH_CONNECT_V4`].
     ///
     /// [`FWPM_LAYER_ALE_AUTH_CONNECT_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     ConnectV4,
-    /// IPv6 outbound connections at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control outgoing IPv6 connection attempts.
+    /// Used for authorizing accept requests for outgoing TCP IPv6 connections, as well as outgoing
+    /// non-TCP traffic based on the first packed received.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_AUTH_CONNECT_V6`].
     ///
     /// [`FWPM_LAYER_ALE_AUTH_CONNECT_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     ConnectV6,
-    /// IPv4 established flows at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control established IPv4 connections.
+    /// Filters at this layer can inspect an IPv4 connection that has been authorized.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4`].
     ///
     /// [`FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     FlowEstablishedV4,
-    /// IPv6 established flows at the Application Layer Enforcement (ALE) layer.
-    /// Filters at this layer can inspect and control established IPv6 connections.
+    /// Filters at this layer can inspect an IPv6 connection that has been authorized.
     ///
     /// Corresponds to [`FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6`].
     ///
     /// [`FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     FlowEstablishedV6,
-    /// IPv4 inbound IP packets at the network layer.
-    /// Filters at this layer can inspect and control incoming IPv4 packets before routing.
+    /// Incoming IPv4 packets before any IP header processing has occurred.
     ///
     /// Corresponds to [`FWPM_LAYER_INBOUND_IPPACKET_V4`].
     ///
     /// [`FWPM_LAYER_INBOUND_IPPACKET_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     InboundIpPacketV4,
-    /// IPv6 inbound IP packets at the network layer.
-    /// Filters at this layer can inspect and control incoming IPv6 packets before routing.
+    /// Incoming IPv6 packets before any IP header processing has occurred.
     ///
     /// Corresponds to [`FWPM_LAYER_INBOUND_IPPACKET_V6`].
     ///
     /// [`FWPM_LAYER_INBOUND_IPPACKET_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     InboundIpPacketV6,
-    /// IPv4 outbound IP packets at the network layer.
-    /// Filters at this layer can inspect and control outgoing IPv4 packets after routing.
+    /// Outbound IPv4 packets just before fragmentation.
     ///
     /// Corresponds to [`FWPM_LAYER_OUTBOUND_IPPACKET_V4`].
     ///
     /// [`FWPM_LAYER_OUTBOUND_IPPACKET_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     OutboundIpPacketV4,
-    /// IPv6 outbound IP packets at the network layer.
-    /// Filters at this layer can inspect and control outgoing IPv6 packets after routing.
+    /// Outbound IPv6 packets just before fragmentation.
     ///
     /// Corresponds to [`FWPM_LAYER_OUTBOUND_IPPACKET_V6`].
     ///
     /// [`FWPM_LAYER_OUTBOUND_IPPACKET_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     OutboundIpPacketV6,
-    /// IPv4 inbound transport layer packets.
-    /// Filters at this layer can inspect and control incoming IPv4 transport layer data.
+    /// Incoming IPv4 packets before transport layer processing.
     ///
     /// Corresponds to [`FWPM_LAYER_INBOUND_TRANSPORT_V4`].
     ///
     /// [`FWPM_LAYER_INBOUND_TRANSPORT_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     InboundTransportV4,
-    /// IPv6 inbound transport layer packets.
-    /// Filters at this layer can inspect and control incoming IPv6 transport layer data.
+    /// Incoming IPv6 packets before transport layer processing.
     ///
     /// Corresponds to [`FWPM_LAYER_INBOUND_TRANSPORT_V6`].
     ///
     /// [`FWPM_LAYER_INBOUND_TRANSPORT_V6`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     InboundTransportV6,
-    /// IPv4 outbound transport layer packets.
-    /// Filters at this layer can inspect and control outgoing IPv4 transport layer data.
+    /// Outbound IPv4 packets before any network layer processing.
     ///
     /// Corresponds to [`FWPM_LAYER_OUTBOUND_TRANSPORT_V4`].
     ///
     /// [`FWPM_LAYER_OUTBOUND_TRANSPORT_V4`]: https://docs.microsoft.com/en-us/windows/win32/fwp/management-filtering-layer-identifiers-
     OutboundTransportV4,
-    /// IPv6 outbound transport layer packets.
-    /// Filters at this layer can inspect and control outgoing IPv6 transport layer data.
+    /// Outbound IPv6 packets before any network layer processing.
     ///
     /// Corresponds to [`FWPM_LAYER_OUTBOUND_TRANSPORT_V6`].
     ///
