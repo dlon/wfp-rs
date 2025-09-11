@@ -54,6 +54,7 @@
 mod action;
 mod condition;
 mod engine;
+mod r#enum;
 mod filter;
 mod layer;
 mod sublayer;
@@ -63,6 +64,7 @@ mod transaction;
 pub use action::ActionType;
 pub use condition::*;
 pub use engine::{FilterEngine, FilterEngineBuilder};
+pub use r#enum::{FilterEnumItem, FilterEnumerator};
 pub use filter::*;
 pub use layer::*;
 pub use sublayer::*;
