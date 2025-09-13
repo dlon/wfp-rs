@@ -20,7 +20,7 @@ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
 /// # Example
 ///
 /// ```no_run
-/// use wfp::{FilterEngineBuilder, FilterEnumerator};
+/// use wfp::{FilterEngineBuilder, FilterEnumerator, Transaction};
 /// use std::io;
 ///
 /// fn main() -> io::Result<()> {
@@ -98,6 +98,7 @@ impl<'a, 'b> FilterEnumerator<'a, 'b> {
     /// preventing further calls to `next()` until the returned `FilterEnumItem` is dropped.
     ///
     /// If an error occurs, an error is returned, and future calls to `next` return `None`.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<io::Result<FilterEnumItem<'a, 'b, '_>>> {
         const NUM_ENTRIES: u32 = 50;
 
