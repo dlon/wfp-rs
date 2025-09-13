@@ -9,9 +9,12 @@ use std::ptr;
 use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_FILTER_CONDITION0;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_FILTER0;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterAdd0;
+use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterDeleteById0;
+use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterDeleteByKey0;
 use windows_sys::core::GUID;
 
 use crate::action::ActionType;
@@ -264,4 +267,32 @@ impl FilterBuilder<FilterBuilderHasName, FilterBuilderHasAction> {
 
         Ok(())
     }
+}
+
+/// Delete a filter by its ID.
+///
+/// The ID corresponds to the `filterId` field in the underlying [`FWPM_FILTER0`] structure.
+///
+/// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+pub fn delete_filter<'a>(transaction: &Transaction<'a>, id: u64) -> io::Result<()> {
+    // SAFETY: The handle and ID are valid
+    let status = unsafe { FwpmFilterDeleteById0(transaction.engine.as_raw_handle(), id) };
+    if status != STATUS_SUCCESS as u32 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    Ok(())
+}
+
+/// Delete a filter by its GUID.
+///
+/// The GUID corresponds to the `filterKey` field in the underlying [`FWPM_FILTER0`] structure.
+///
+/// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+pub fn delete_filter_by_guid<'a>(transaction: &Transaction<'a>, guid: &GUID) -> io::Result<()> {
+    // SAFETY: The handle and GUID are valid
+    let status = unsafe { FwpmFilterDeleteByKey0(transaction.engine.as_raw_handle(), guid) };
+    if status != STATUS_SUCCESS as u32 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    Ok(())
 }
