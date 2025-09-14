@@ -2,8 +2,6 @@
 
 use std::ffi::OsStr;
 use std::io;
-use std::iter;
-use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
 use std::ptr;
 use std::sync::Arc;
@@ -14,6 +12,7 @@ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmSubLaye
 use windows_sys::core::GUID;
 
 use crate::transaction::Transaction;
+use crate::util::string_to_null_terminated_utf16;
 
 /// Builder for creating Windows Filtering Platform sublayers.
 ///
@@ -94,11 +93,7 @@ impl<Name> SubLayerBuilder<Name> {
     ///
     /// [`FWPM_SUBLAYER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_sublayer0
     pub fn name(mut self, name: impl AsRef<OsStr>) -> SubLayerBuilder<SubLayerBuilderHasName> {
-        self.display_data_name_buffer = name
-            .as_ref()
-            .encode_wide()
-            .chain(iter::once(0u16))
-            .collect();
+        self.display_data_name_buffer = string_to_null_terminated_utf16(name);
         // SAFETY: The data is never mutated
         self.sublayer.displayData.name = self.display_data_name_buffer.as_ptr() as *mut _;
         SubLayerBuilder {
@@ -118,11 +113,7 @@ impl<Name> SubLayerBuilder<Name> {
     ///
     /// [`FWPM_SUBLAYER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_sublayer0
     pub fn description(mut self, desc: impl AsRef<OsStr>) -> SubLayerBuilder<Name> {
-        self.display_data_desc_buffer = desc
-            .as_ref()
-            .encode_wide()
-            .chain(iter::once(0u16))
-            .collect();
+        self.display_data_desc_buffer = string_to_null_terminated_utf16(desc);
         // SAFETY: The data is never mutated
         self.sublayer.displayData.description = self.display_data_desc_buffer.as_ptr() as *mut _;
         SubLayerBuilder {

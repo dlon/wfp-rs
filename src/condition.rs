@@ -1,8 +1,6 @@
 //! Filter condition creation and management.
 
 use std::ffi::OsStr;
-use std::iter;
-use std::os::windows::ffi::OsStrExt;
 use std::sync::Arc;
 
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
@@ -13,6 +11,8 @@ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
     FWPM_CONDITION_IP_REMOTE_ADDRESS, FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
 };
 use windows_sys::core::GUID;
+
+use crate::util::string_to_null_terminated_utf16;
 
 /// Typed builder for port-based conditions.
 ///
@@ -300,7 +300,6 @@ struct ConditionBuilder {
 }
 
 /// Internal representation of condition values with their associated buffers.
-#[derive(Clone)]
 enum ConditionValue {
     UInt32(u32),
     UInt16(u16),
@@ -343,11 +342,7 @@ impl ConditionBuilder {
 
     /// Sets a string value for the condition.
     pub fn value_string(mut self, value: impl AsRef<OsStr>) -> Self {
-        let wide_string: Vec<u16> = value
-            .as_ref()
-            .encode_wide()
-            .chain(iter::once(0u16))
-            .collect();
+        let wide_string = string_to_null_terminated_utf16(value);
         self.value = Some(ConditionValue::String(wide_string).into());
         self
     }

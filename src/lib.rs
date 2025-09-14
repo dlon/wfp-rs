@@ -59,6 +59,7 @@ mod filter;
 mod layer;
 mod sublayer;
 mod transaction;
+mod util;
 
 // Re-export public API
 pub use action::ActionType;
