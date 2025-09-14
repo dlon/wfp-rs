@@ -1,17 +1,19 @@
 //! Filter condition creation and management.
 
 use std::ffi::OsStr;
+use std::io;
 use std::sync::Arc;
 
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
-    FWP_BYTE_BLOB, FWP_BYTE_BLOB_TYPE, FWP_MATCH_EQUAL, FWP_MATCH_GREATER,
-    FWP_MATCH_GREATER_OR_EQUAL, FWP_MATCH_LESS, FWP_MATCH_LESS_OR_EQUAL, FWP_MATCH_RANGE,
-    FWP_UINT8, FWP_UINT16, FWP_UINT32, FWP_UNICODE_STRING_TYPE, FWPM_CONDITION_ALE_APP_ID,
-    FWPM_CONDITION_IP_LOCAL_ADDRESS, FWPM_CONDITION_IP_LOCAL_PORT, FWPM_CONDITION_IP_PROTOCOL,
-    FWPM_CONDITION_IP_REMOTE_ADDRESS, FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
+    FWP_BYTE_BLOB_TYPE, FWP_MATCH_EQUAL, FWP_MATCH_GREATER, FWP_MATCH_GREATER_OR_EQUAL,
+    FWP_MATCH_LESS, FWP_MATCH_LESS_OR_EQUAL, FWP_MATCH_RANGE, FWP_UINT8, FWP_UINT16, FWP_UINT32,
+    FWP_UNICODE_STRING_TYPE, FWPM_CONDITION_ALE_APP_ID, FWPM_CONDITION_IP_LOCAL_ADDRESS,
+    FWPM_CONDITION_IP_LOCAL_PORT, FWPM_CONDITION_IP_PROTOCOL, FWPM_CONDITION_IP_REMOTE_ADDRESS,
+    FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
 };
 use windows_sys::core::GUID;
 
+use crate::blob::{OwnedByteBlob, app_id_from_filename};
 use crate::util::string_to_null_terminated_utf16;
 
 /// Typed builder for port-based conditions.
@@ -145,17 +147,16 @@ impl Default for ProtocolConditionBuilder {
 
 /// Typed builder for application ID conditions.
 ///
-/// This builder enforces that only string paths can be used as values,
-/// providing compile-time type safety for application-based filtering.
+/// These are used for application-based filtering.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use wfp::AppIdConditionBuilder;
 ///
 /// // Block traffic from a specific application
 /// let app_condition = AppIdConditionBuilder::default()
-///     .equal(r"C:\Program Files\MyApp\app.exe")
+///     .equal(r"C:\Program Files\MyApp\app.exe")?
 ///     .build();
 /// ```
 pub struct AppIdConditionBuilder<Value> {
@@ -186,14 +187,16 @@ impl<Value> AppIdConditionBuilder<Value> {
     pub fn equal(
         self,
         app_path: impl AsRef<OsStr>,
-    ) -> AppIdConditionBuilder<AppIdConditionBuilderHasValue> {
-        AppIdConditionBuilder {
+    ) -> io::Result<AppIdConditionBuilder<AppIdConditionBuilderHasValue>> {
+        let byte_blob = app_id_from_filename(app_path)?;
+
+        Ok(AppIdConditionBuilder {
             builder: self
                 .builder
                 .match_type(MatchType::Equal)
-                .value_string(app_path),
+                .value_byte_blob(byte_blob),
             _pd: std::marker::PhantomData,
-        }
+        })
     }
 }
 
@@ -305,7 +308,7 @@ enum ConditionValue {
     UInt16(u16),
     UInt8(u8),
     String(Vec<u16>),
-    ByteBlob { blob: FWP_BYTE_BLOB, _data: Vec<u8> },
+    ByteBlob { blob: OwnedByteBlob },
 }
 
 impl ConditionBuilder {
@@ -341,6 +344,7 @@ impl ConditionBuilder {
     }
 
     /// Sets a string value for the condition.
+    #[allow(dead_code)]
     pub fn value_string(mut self, value: impl AsRef<OsStr>) -> Self {
         let wide_string = string_to_null_terminated_utf16(value);
         self.value = Some(ConditionValue::String(wide_string).into());
@@ -362,20 +366,8 @@ impl ConditionBuilder {
     ///     .value_byte_blob(app_id_data)
     ///     .build()?;
     /// ```
-    #[allow(dead_code)]
-    pub fn value_byte_blob(mut self, data: &[u8]) -> Self {
-        let data = data.to_vec();
-        self.value = Some(
-            ConditionValue::ByteBlob {
-                blob: FWP_BYTE_BLOB {
-                    // SAFETY: The data is never mutated
-                    data: data.as_ptr() as *mut _,
-                    size: u32::try_from(data.len()).unwrap(),
-                },
-                _data: data,
-            }
-            .into(),
-        );
+    pub fn value_byte_blob(mut self, blob: impl Into<OwnedByteBlob>) -> Self {
+        self.value = Some(ConditionValue::ByteBlob { blob: blob.into() }.into());
         self
     }
 
@@ -409,10 +401,10 @@ impl ConditionBuilder {
                 // SAFETY: The data is never mutated, and is tied to the lifetime of Condition
                 raw_condition.conditionValue.Anonymous.unicodeString = wide_str.as_ptr() as *mut _;
             }
-            ConditionValue::ByteBlob { blob, _data: _ } => {
+            ConditionValue::ByteBlob { blob } => {
                 raw_condition.conditionValue.r#type = FWP_BYTE_BLOB_TYPE;
                 // SAFETY: The data is never mutated, and is tied to the lifetime of Condition
-                raw_condition.conditionValue.Anonymous.byteBlob = blob as *const _ as *mut _;
+                raw_condition.conditionValue.Anonymous.byteBlob = blob.as_ptr() as _;
             }
         }
 

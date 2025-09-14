@@ -52,6 +52,7 @@
 #![cfg(target_os = "windows")]
 
 mod action;
+mod blob;
 mod condition;
 mod engine;
 mod r#enum;
