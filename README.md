@@ -1,8 +1,6 @@
 # WFP - Windows Filtering Platform Rust library
 
-⚠️ **This project is experimental and a work in progress.**
-
-A safe Rust library for the Windows Filtering Platform (WFP) API, providing an ergonomic interface for creating and managing network filters on Windows systems.
+A safe Rust library for the Windows Filtering Platform (WFP) API. This API is used for low-level network filtering.
 
 ## Adding wfp-rs to your project
 
