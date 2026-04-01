@@ -11,6 +11,22 @@ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
     FWPM_CONDITION_IP_LOCAL_PORT, FWPM_CONDITION_IP_PROTOCOL, FWPM_CONDITION_IP_REMOTE_ADDRESS,
     FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
 };
+
+// Not available in windows-sys as of 0.60.
+// FIXME: Add to windows-sys
+const FWPM_CONDITION_ICMP_TYPE: GUID = GUID {
+    data1: 0xd78e1e87,
+    data2: 0x8644,
+    data3: 0x4ea5,
+    data4: [0x94, 0x37, 0xd8, 0x09, 0xec, 0xef, 0xc9, 0x71],
+};
+// FIXME: Add to windows-sys
+const FWPM_CONDITION_ICMP_CODE: GUID = GUID {
+    data1: 0xd78e1e88,
+    data2: 0x8644,
+    data3: 0x4ea5,
+    data4: [0x94, 0x37, 0xd8, 0x09, 0xec, 0xef, 0xc9, 0x71],
+};
 use windows_sys::core::GUID;
 
 use crate::blob::{OwnedByteBlob, app_id_from_filename};
@@ -145,6 +161,115 @@ impl Default for ProtocolConditionBuilder {
     }
 }
 
+/// Typed builder for ICMP conditions.
+///
+/// # Example
+///
+/// ```no_run
+/// use wfp::{IcmpConditionBuilder, MatchType};
+///
+/// // Match echo request (type 8)
+/// let condition = IcmpConditionBuilder::r#type()
+///     .equal(8)
+///     .build();
+///
+/// // Match ICMP code 0
+/// let condition = IcmpConditionBuilder::code()
+///     .equal(0)
+///     .build();
+/// ```
+#[derive(Clone)]
+pub struct IcmpConditionBuilder<Value> {
+    builder: ConditionBuilder,
+    _pd: std::marker::PhantomData<Value>,
+}
+
+/// Type-state marker indicating the ICMP value has not been set.
+#[doc(hidden)]
+pub struct IcmpConditionBuilderMissingValue;
+
+/// Type-state marker indicating the ICMP value has been set.
+#[doc(hidden)]
+pub struct IcmpConditionBuilderHasValue;
+
+impl IcmpConditionBuilder<IcmpConditionBuilderMissingValue> {
+    /// Creates an ICMP type condition.
+    pub fn r#type() -> Self {
+        Self {
+            builder: ConditionBuilder::default().field(ConditionField::IcmpType),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates an ICMP code condition.
+    pub fn code() -> Self {
+        Self {
+            builder: ConditionBuilder::default().field(ConditionField::IcmpCode),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Value> IcmpConditionBuilder<Value> {
+    /// Creates a condition that matches the exact value.
+    pub fn equal(self, value: u16) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+        IcmpConditionBuilder {
+            builder: self.builder.match_type(MatchType::Equal).value_u16(value),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a condition that matches values greater than the given value.
+    pub fn greater(self, value: u16) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+        IcmpConditionBuilder {
+            builder: self.builder.match_type(MatchType::Greater).value_u16(value),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a condition that matches values less than the given value.
+    pub fn less(self, value: u16) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+        IcmpConditionBuilder {
+            builder: self.builder.match_type(MatchType::Less).value_u16(value),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a condition that matches values greater than or equal to the given value.
+    pub fn greater_or_equal(
+        self,
+        value: u16,
+    ) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+        IcmpConditionBuilder {
+            builder: self
+                .builder
+                .match_type(MatchType::GreaterOrEqual)
+                .value_u16(value),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a condition that matches values less than or equal to the given value.
+    pub fn less_or_equal(self, value: u16) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+        IcmpConditionBuilder {
+            builder: self
+                .builder
+                .match_type(MatchType::LessOrEqual)
+                .value_u16(value),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+    /// Builds the condition.
+    ///
+    /// This method is only available when a value has been set.
+    pub fn build(self) -> Condition {
+        self.builder.build().expect("condition should be valid")
+    }
+}
+
 /// Typed builder for application ID conditions.
 ///
 /// These are used for application-based filtering.
@@ -253,6 +378,10 @@ pub enum ConditionField {
     LocalPort,
     /// IP protocol (TCP, UDP, etc.).
     Protocol,
+    /// ICMP type.
+    IcmpType,
+    /// ICMP code.
+    IcmpCode,
     /// Application ID (executable path).
     ///
     /// The lower-case fully qualified device path of the application.
@@ -269,6 +398,8 @@ impl ConditionField {
             Self::RemotePort => &FWPM_CONDITION_IP_REMOTE_PORT,
             Self::LocalPort => &FWPM_CONDITION_IP_LOCAL_PORT,
             Self::Protocol => &FWPM_CONDITION_IP_PROTOCOL,
+            Self::IcmpType => &FWPM_CONDITION_ICMP_TYPE,
+            Self::IcmpCode => &FWPM_CONDITION_ICMP_CODE,
             Self::AppId => &FWPM_CONDITION_ALE_APP_ID,
         }
     }
