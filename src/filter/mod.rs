@@ -164,6 +164,18 @@ impl<Name, Action> FilterBuilder<Name, Action> {
         }
     }
 
+    /// Sets the GUID that uniquely identifies this filter.
+    ///
+    /// If not set, the system assigns a GUID automatically.
+    ///
+    /// This sets the `filterKey` field in the underlying [`FWPM_FILTER0`] structure.
+    ///
+    /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    pub fn guid(mut self, guid: GUID) -> FilterBuilder<Name, Action> {
+        self.filter.filterKey = guid;
+        self
+    }
+
     /// Sets the network layer at which the filter operates.
     ///
     /// This sets the `layerKey` field in the underlying [`FWPM_FILTER0`] structure.
