@@ -71,3 +71,6 @@ pub use filter::*;
 pub use layer::*;
 pub use sublayer::*;
 pub use transaction::Transaction;
+
+// Re-export publicly exposed types from external crates
+pub use windows_sys::core::GUID;
