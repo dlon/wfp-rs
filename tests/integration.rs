@@ -52,6 +52,7 @@ fn test_add_filters_and_sublayer() {
         .condition(https_condition)
         .condition(tcp_condition)
         .sublayer(test_guid)
+        .weight(FilterWeight::Exact(12345))
         .add(&transaction)
         .expect("Should be able to add HTTPS filter");
 
@@ -63,8 +64,6 @@ fn test_add_filters_and_sublayer() {
 #[test]
 #[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
 fn test_app_id_condition() {
-    // Verify that AppIdConditionBuilder works end-to-end with a real Windows executable.
-    // This exercises the FwpmGetAppIdFromFileName0 code path introduced in set-binary-blob.
     let mut engine = FilterEngineBuilder::default()
         .dynamic()
         .open()
@@ -101,6 +100,7 @@ fn test_app_id_condition() {
         .layer(Layer::ConnectV4)
         .condition(app_condition.build())
         .sublayer(test_guid)
+        .weight(WeightRange::try_from(15).unwrap())
         .add(&transaction)
         .expect("Should be able to add app ID filter");
 

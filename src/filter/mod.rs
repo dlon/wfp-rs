@@ -1,5 +1,9 @@
 //! Filter creation and management for the Windows Filtering Platform.
 
+mod weight;
+
+pub use weight::*;
+
 use std::ffi::OsStr;
 use std::io;
 use std::os::windows::io::AsRawHandle;
@@ -8,11 +12,10 @@ use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_FILTER_CONDITION0;
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_FILTER0;
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterAdd0;
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterDeleteById0;
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmFilterDeleteByKey0;
+use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
+    FWP_EMPTY, FWP_UINT8, FWP_UINT64, FWPM_FILTER_CONDITION0, FWPM_FILTER0, FwpmFilterAdd0,
+    FwpmFilterDeleteById0, FwpmFilterDeleteByKey0,
+};
 use windows_sys::core::GUID;
 
 use crate::action::ActionType;
@@ -58,6 +61,7 @@ pub struct FilterBuilder<Name, Action> {
     display_data_name_buffer: Arc<[u16]>,
     display_data_desc_buffer: Arc<[u16]>,
     conditions: Vec<Condition>,
+    weight_value: u64,
 
     _pd: std::marker::PhantomData<(Name, Action)>,
 }
@@ -90,6 +94,7 @@ impl Default for FilterBuilder<FilterBuilderMissingName, FilterBuilderMissingAct
             display_data_name_buffer: Default::default(),
             display_data_desc_buffer: Default::default(),
             conditions: Default::default(),
+            weight_value: 0,
             _pd: Default::default(),
         }
     }
@@ -116,7 +121,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
             conditions: self.conditions,
-
+            weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
         }
     }
@@ -137,7 +142,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
             conditions: self.conditions,
-
+            weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
         }
     }
@@ -154,7 +159,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
             conditions: self.conditions,
-
+            weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
         }
     }
@@ -178,6 +183,33 @@ impl<Name, Action> FilterBuilder<Name, Action> {
     /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
     pub fn sublayer(mut self, sublayer: GUID) -> FilterBuilder<Name, Action> {
         self.filter.subLayerKey = sublayer;
+        self
+    }
+
+    /// Sets the weight (priority) of the filter within its sublayer.
+    ///
+    /// Higher weight means the filter is evaluated first. See the
+    /// [Filter Arbitration] documentation for details.
+    ///
+    /// This sets the `weight` field in the underlying [`FWPM_FILTER0`] structure.
+    ///
+    /// [Filter Arbitration]: https://docs.microsoft.com/en-us/windows/win32/fwp/filter-arbitration
+    /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    pub fn weight(mut self, weight: impl Into<FilterWeight>) -> FilterBuilder<Name, Action> {
+        match weight.into() {
+            FilterWeight::Auto => {
+                self.filter.weight.r#type = FWP_EMPTY;
+            }
+            FilterWeight::Range(range) => {
+                self.filter.weight.r#type = FWP_UINT8;
+                self.filter.weight.Anonymous.uint8 = range.get();
+            }
+            FilterWeight::Exact(val) => {
+                self.weight_value = val;
+                self.filter.weight.r#type = FWP_UINT64;
+                // The pointer is set in add() since self may move after this call.
+            }
+        }
         self
     }
 
@@ -238,6 +270,13 @@ impl FilterBuilder<FilterBuilderHasName, FilterBuilderHasAction> {
             filter.numFilterConditions = u32::try_from(fwpm_conditions.len()).unwrap();
             // SAFETY: The conditions are never actually mutated
             filter.filterCondition = fwpm_conditions.as_ptr() as *mut _;
+        }
+
+        // Set the weight pointer for Exact weights. This must be done here
+        // rather than in weight() because the builder may have moved since then.
+        if filter.weight.r#type == FWP_UINT64 {
+            // SAFETY: The data is not mutated despite the type.
+            filter.weight.Anonymous.uint64 = &self.weight_value as *const u64 as *mut u64;
         }
 
         // SAFETY:
