@@ -59,3 +59,52 @@ fn test_add_filters_and_sublayer() {
         .commit()
         .expect("Should be able to commit multiple filters");
 }
+
+#[test]
+#[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
+fn test_app_id_condition() {
+    // Verify that AppIdConditionBuilder works end-to-end with a real Windows executable.
+    // This exercises the FwpmGetAppIdFromFileName0 code path introduced in set-binary-blob.
+    let mut engine = FilterEngineBuilder::default()
+        .dynamic()
+        .open()
+        .expect("Should be able to open filter engine");
+
+    let transaction = Transaction::new(&mut engine).expect("Should be able to create transaction");
+
+    let test_guid = windows_sys::core::GUID::from_u128(0xaabbccdd_1234_5678_9abc_def012345678);
+
+    SubLayerBuilder::default()
+        .name("Test AppId Sublayer")
+        .description("Test sublayer for app ID integration tests")
+        .weight(100)
+        .guid(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add sublayer");
+
+    // get_app_id_from_filename returns Err for non-existent paths
+    let bad_result = AppIdConditionBuilder::default().equal(r"C:\nonexistent\fake.exe");
+    assert!(
+        bad_result.is_err(),
+        "Should return Err for a nonexistent executable path"
+    );
+
+    // get_app_id_from_filename returns Ok for a real executable
+    let app_condition = AppIdConditionBuilder::default()
+        .equal(r"C:\Windows\System32\ping.exe")
+        .expect("Should be able to get app ID from ping.exe");
+
+    FilterBuilder::default()
+        .name("Ping Block Filter")
+        .description("Blocks ping.exe outbound traffic")
+        .action(ActionType::Block)
+        .layer(Layer::ConnectV4)
+        .condition(app_condition.build())
+        .sublayer(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add app ID filter");
+
+    transaction
+        .commit()
+        .expect("Should be able to commit app ID filter transaction");
+}
