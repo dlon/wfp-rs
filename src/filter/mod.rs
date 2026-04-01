@@ -13,8 +13,9 @@ use std::sync::Arc;
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
-    FWP_EMPTY, FWP_UINT8, FWP_UINT64, FWPM_FILTER_CONDITION0, FWPM_FILTER0, FwpmFilterAdd0,
-    FwpmFilterDeleteById0, FwpmFilterDeleteByKey0,
+    FWP_EMPTY, FWP_UINT8, FWP_UINT64, FWPM_FILTER_CONDITION0, FWPM_FILTER_FLAG_BOOTTIME,
+    FWPM_FILTER_FLAG_PERSISTENT, FWPM_FILTER0, FwpmFilterAdd0, FwpmFilterDeleteById0,
+    FwpmFilterDeleteByKey0,
 };
 use windows_sys::core::GUID;
 
@@ -225,6 +226,25 @@ impl<Name, Action> FilterBuilder<Name, Action> {
         self
     }
 
+    /// Sets the lifetime of the filter.
+    ///
+    /// This sets the `flags` field in the underlying [`FWPM_FILTER0`] structure.
+    ///
+    /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    pub fn lifetime(mut self, lifetime: FilterLifetime) -> FilterBuilder<Name, Action> {
+        self.filter.flags &= !(FWPM_FILTER_FLAG_BOOTTIME | FWPM_FILTER_FLAG_PERSISTENT);
+        match lifetime {
+            FilterLifetime::Default => {}
+            FilterLifetime::Boottime => {
+                self.filter.flags |= FWPM_FILTER_FLAG_BOOTTIME;
+            }
+            FilterLifetime::Persistent => {
+                self.filter.flags |= FWPM_FILTER_FLAG_PERSISTENT;
+            }
+        }
+        self
+    }
+
     /// Adds a condition to the filter.
     ///
     /// Conditions specify criteria that network traffic must match for the filter
@@ -309,6 +329,28 @@ impl FilterBuilder<FilterBuilderHasName, FilterBuilderHasAction> {
 
         Ok(())
     }
+}
+
+/// Controls the lifetime of a filter.
+///
+/// Boot-time and persistent filters are mutually exclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FilterLifetime {
+    /// Filter lives as long as the engine session (default).
+    #[default]
+    Default,
+    /// Filter is active only during boot, before BFE starts but as soon as `tcpip.sys` starts.
+    ///
+    /// This corresponds to [`FWPM_FILTER_FLAG_BOOTTIME`].
+    ///
+    /// [`FWPM_FILTER_FLAG_BOOTTIME`]: https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    Boottime,
+    /// Filter persists across reboots.
+    ///
+    /// This corresponds to [`FWPM_FILTER_FLAG_PERSISTENT`].
+    ///
+    /// [`FWPM_FILTER_FLAG_PERSISTENT`]: https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    Persistent,
 }
 
 /// Delete a filter by its ID.
