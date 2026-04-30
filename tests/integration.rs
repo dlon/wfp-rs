@@ -216,3 +216,50 @@ fn test_ndp_filter() {
         .commit()
         .expect("Should be able to commit NDP filter transaction");
 }
+
+#[test]
+#[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
+fn test_local_interface_condition() {
+    let mut engine = FilterEngineBuilder::default()
+        .dynamic()
+        .open()
+        .expect("Should be able to open filter engine");
+
+    let transaction = Transaction::new(&mut engine).expect("Should be able to create transaction");
+
+    let test_guid = GUID::from_u128(0xbbccddee_2345_6789_abcd_ef0123456789);
+
+    SubLayerBuilder::default()
+        .name("Test Interface Sublayer")
+        .description("Test sublayer for interface condition integration tests")
+        .weight(100)
+        .guid(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add sublayer");
+
+    // ConvertInterfaceAliasToLuid returns an error for an unknown interface.
+    let bad_result = InterfaceConditionBuilder::local().alias("definitely-not-an-interface-xyz");
+    assert!(
+        bad_result.is_err(),
+        "Should return Err for a nonexistent interface alias"
+    );
+
+    // The loopback pseudo-interface is guaranteed to exist
+    let iface_condition = InterfaceConditionBuilder::local()
+        .alias("Loopback Pseudo-Interface 1")
+        .expect("Should be able to resolve loopback interface alias to a LUID");
+
+    FilterBuilder::default()
+        .name("Loopback Permit Filter")
+        .description("Permits traffic bound to the loopback interface")
+        .action(ActionType::Permit)
+        .layer(Layer::ConnectV4)
+        .condition(iface_condition.build())
+        .sublayer(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add interface filter");
+
+    transaction
+        .commit()
+        .expect("Should be able to commit interface filter transaction");
+}

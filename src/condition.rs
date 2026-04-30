@@ -4,10 +4,14 @@ use std::ffi::OsStr;
 use std::io;
 use std::sync::Arc;
 
+use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::NetworkManagement::IpHelper::ConvertInterfaceAliasToLuid;
+use windows_sys::Win32::NetworkManagement::Ndis::NET_LUID_LH;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
     FWP_BYTE_BLOB_TYPE, FWP_MATCH_EQUAL, FWP_MATCH_GREATER, FWP_MATCH_GREATER_OR_EQUAL,
     FWP_MATCH_LESS, FWP_MATCH_LESS_OR_EQUAL, FWP_MATCH_RANGE, FWP_UINT8, FWP_UINT16, FWP_UINT32,
-    FWP_UNICODE_STRING_TYPE, FWPM_CONDITION_ALE_APP_ID, FWPM_CONDITION_IP_LOCAL_ADDRESS,
+    FWP_UINT64, FWP_UNICODE_STRING_TYPE, FWPM_CONDITION_ALE_APP_ID,
+    FWPM_CONDITION_IP_LOCAL_ADDRESS, FWPM_CONDITION_IP_LOCAL_INTERFACE,
     FWPM_CONDITION_IP_LOCAL_PORT, FWPM_CONDITION_IP_PROTOCOL, FWPM_CONDITION_IP_REMOTE_ADDRESS,
     FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
 };
@@ -342,6 +346,89 @@ impl Default for AppIdConditionBuilder<AppIdConditionBuilderMissingValue> {
     }
 }
 
+/// Typed builder for interface (LUID) conditions.
+///
+/// Builds a condition that matches the local interface a connection is bound to,
+/// corresponding to `FWPM_CONDITION_IP_LOCAL_INTERFACE`.
+///
+/// # Example
+///
+/// ```ignore
+/// use wfp::InterfaceConditionBuilder;
+///
+/// // Match traffic bound to the "Test" interface
+/// let condition = InterfaceConditionBuilder::local()
+///     .alias("Test")?
+///     .build();
+/// ```
+pub struct InterfaceConditionBuilder<Value> {
+    builder: ConditionBuilder,
+    _pd: std::marker::PhantomData<Value>,
+}
+
+/// Type-state marker indicating the interface value has not been set.
+#[doc(hidden)]
+pub struct InterfaceConditionBuilderMissingValue;
+
+/// Type-state marker indicating the interface value has been set.
+#[doc(hidden)]
+pub struct InterfaceConditionBuilderHasValue;
+
+impl InterfaceConditionBuilder<InterfaceConditionBuilderMissingValue> {
+    /// Creates a local interface condition (`FWPM_CONDITION_IP_LOCAL_INTERFACE`).
+    pub fn local() -> Self {
+        Self {
+            builder: ConditionBuilder::default().field(ConditionField::LocalInterface),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Value> InterfaceConditionBuilder<Value> {
+    /// Creates a condition that matches the interface with the given alias.
+    ///
+    /// The alias is resolved to a LUID using [`ConvertInterfaceAliasToLuid`].
+    /// Returns `Err` if the interface does not exist.
+    ///
+    /// [`ConvertInterfaceAliasToLuid`]: https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-convertinterfacealiastoluid
+    pub fn alias(
+        self,
+        alias: impl AsRef<OsStr>,
+    ) -> io::Result<InterfaceConditionBuilder<InterfaceConditionBuilderHasValue>> {
+        let wide_alias: Vec<u16> = string_to_null_terminated_utf16(alias);
+        let mut luid = NET_LUID_LH::default();
+
+        // SAFETY: Passing a null-terminated UTF-16 string and a valid pointer to NET_LUID_LH.
+        let status = unsafe { ConvertInterfaceAliasToLuid(wide_alias.as_ptr(), &mut luid) };
+        if status != ERROR_SUCCESS {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
+
+        // SAFETY: NET_LUID_LH is a union of `Value: u64` and `Info` (also 8 bytes), so reading
+        // `Value` is always valid regardless of how the OS populated the union.
+        let luid_value = unsafe { luid.Value };
+        Ok(self.luid(luid_value))
+    }
+
+    /// Creates a condition that matches the given raw interface LUID.
+    pub fn luid(self, luid: u64) -> InterfaceConditionBuilder<InterfaceConditionBuilderHasValue> {
+        InterfaceConditionBuilder {
+            builder: self.builder.match_type(MatchType::Equal).value_u64(luid),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl InterfaceConditionBuilder<InterfaceConditionBuilderHasValue> {
+    /// Builds the condition.
+    ///
+    /// This method is only available when an interface value has been set with
+    /// `alias()` or `luid()`.
+    pub fn build(self) -> Condition {
+        self.builder.build().expect("condition should be valid")
+    }
+}
+
 /// Specifies how a condition value should be matched against network traffic.
 ///
 /// These correspond to the [`FWP_MATCH_TYPE`] enumeration values.
@@ -389,6 +476,8 @@ pub enum ConditionField {
     /// The lower-case fully qualified device path of the application.
     /// (For example, "\device\hardiskvolume1\program files\application.exe".)
     AppId,
+    /// Local interface LUID for the connection.
+    LocalInterface,
 }
 
 impl ConditionField {
@@ -403,6 +492,7 @@ impl ConditionField {
             Self::IcmpType => &FWPM_CONDITION_ICMP_TYPE,
             Self::IcmpCode => &FWPM_CONDITION_ICMP_CODE,
             Self::AppId => &FWPM_CONDITION_ALE_APP_ID,
+            Self::LocalInterface => &FWPM_CONDITION_IP_LOCAL_INTERFACE,
         }
     }
 }
@@ -437,6 +527,7 @@ struct ConditionBuilder {
 
 /// Internal representation of condition values with their associated buffers.
 enum ConditionValue {
+    UInt64(u64),
     UInt32(u32),
     UInt16(u16),
     UInt8(u8),
@@ -454,6 +545,12 @@ impl ConditionBuilder {
     /// Sets how the condition value should be matched.
     pub fn match_type(mut self, match_type: MatchType) -> Self {
         self.match_type = Some(match_type);
+        self
+    }
+
+    /// Sets a 64-bit unsigned integer value for the condition.
+    pub fn value_u64(mut self, value: u64) -> Self {
+        self.value = Some(ConditionValue::UInt64(value).into());
         self
     }
 
@@ -517,6 +614,12 @@ impl ConditionBuilder {
         raw_condition.matchType = match_type as i32;
 
         match &*value {
+            ConditionValue::UInt64(val) => {
+                raw_condition.conditionValue.r#type = FWP_UINT64;
+                // SAFETY: `val` lives in the Arc heap allocation kept alive by `Condition._value`,
+                // so the pointer remains valid for the lifetime of the resulting `Condition`.
+                raw_condition.conditionValue.Anonymous.uint64 = val as *const u64 as *mut u64;
+            }
             ConditionValue::UInt32(val) => {
                 raw_condition.conditionValue.r#type = FWP_UINT32;
                 raw_condition.conditionValue.Anonymous.uint32 = *val;
@@ -568,6 +671,52 @@ impl Condition {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_condition_local_interface_luid() {
+        let luid: u64 = 0xDEAD_BEEF_1234_5678;
+        let condition = InterfaceConditionBuilder::local().luid(luid).build();
+
+        assert_eq!(
+            condition.raw_condition.fieldKey.data1,
+            FWPM_CONDITION_IP_LOCAL_INTERFACE.data1
+        );
+        assert_eq!(
+            condition.raw_condition.fieldKey.data2,
+            FWPM_CONDITION_IP_LOCAL_INTERFACE.data2
+        );
+        assert_eq!(
+            condition.raw_condition.fieldKey.data3,
+            FWPM_CONDITION_IP_LOCAL_INTERFACE.data3
+        );
+        assert_eq!(
+            condition.raw_condition.fieldKey.data4,
+            FWPM_CONDITION_IP_LOCAL_INTERFACE.data4
+        );
+
+        assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
+        assert_eq!(condition.raw_condition.conditionValue.r#type, FWP_UINT64);
+
+        // SAFETY: For FWP_UINT64 the `uint64` field is a pointer to the backing u64,
+        // kept alive by the Arc inside `Condition`.
+        let ptr = unsafe { condition.raw_condition.conditionValue.Anonymous.uint64 };
+        assert!(!ptr.is_null());
+        assert_eq!(unsafe { *ptr }, luid);
+    }
+
+    #[test]
+    fn test_condition_local_interface_pointer_stable_after_clone() {
+        let luid: u64 = 0xCAFE_BABE_DEAD_F00D;
+        let original = InterfaceConditionBuilder::local().luid(luid).build();
+        let cloned = original.clone();
+
+        // SAFETY: Same invariant as above - Arc keeps the storage alive.
+        let original_value = unsafe { *original.raw_condition.conditionValue.Anonymous.uint64 };
+        let cloned_value = unsafe { *cloned.raw_condition.conditionValue.Anonymous.uint64 };
+
+        assert_eq!(original_value, luid);
+        assert_eq!(cloned_value, luid);
+    }
 
     #[test]
     fn test_condition_port_remote() {
