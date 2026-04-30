@@ -53,6 +53,7 @@ pub struct SubLayerBuilder<Name> {
 
     display_data_name_buffer: Arc<[u16]>,
     display_data_desc_buffer: Arc<[u16]>,
+    provider_key: Option<Arc<GUID>>,
 
     _pd: std::marker::PhantomData<Name>,
 }
@@ -79,6 +80,7 @@ impl Default for SubLayerBuilder<SubLayerBuilderMissingName> {
             sublayer: Default::default(),
             display_data_name_buffer: Default::default(),
             display_data_desc_buffer: Default::default(),
+            provider_key: None,
             _pd: Default::default(),
         }
     }
@@ -100,6 +102,7 @@ impl<Name> SubLayerBuilder<Name> {
             sublayer: self.sublayer,
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
+            provider_key: self.provider_key,
 
             _pd: std::marker::PhantomData,
         }
@@ -120,6 +123,7 @@ impl<Name> SubLayerBuilder<Name> {
             sublayer: self.sublayer,
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
+            provider_key: self.provider_key,
 
             _pd: std::marker::PhantomData,
         }
@@ -148,6 +152,19 @@ impl<Name> SubLayerBuilder<Name> {
     /// [`FWPM_SUBLAYER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_sublayer0
     pub fn guid(mut self, guid: GUID) -> SubLayerBuilder<Name> {
         self.sublayer.subLayerKey = guid;
+        self
+    }
+
+    /// Attaches the sublayer to a provider.
+    ///
+    /// This sets the `providerKey` field in the underlying [`FWPM_SUBLAYER0`] structure.
+    ///
+    /// [`FWPM_SUBLAYER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_sublayer0
+    pub fn provider(mut self, guid: GUID) -> SubLayerBuilder<Name> {
+        let key = Arc::new(guid);
+        // SAFETY: The data is never mutated; the Arc keeps the GUID alive as long as `self` lives.
+        self.sublayer.providerKey = Arc::as_ptr(&key) as *mut _;
+        self.provider_key = Some(key);
         self
     }
 }

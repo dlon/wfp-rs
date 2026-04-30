@@ -58,6 +58,7 @@ mod engine;
 mod r#enum;
 mod filter;
 mod layer;
+mod provider;
 mod sublayer;
 mod transaction;
 mod util;
@@ -69,6 +70,7 @@ pub use engine::{FilterEngine, FilterEngineBuilder};
 pub use r#enum::{FilterEnumItem, FilterEnumerator};
 pub use filter::*;
 pub use layer::*;
+pub use provider::*;
 pub use sublayer::*;
 pub use transaction::Transaction;
 

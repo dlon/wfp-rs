@@ -61,6 +61,7 @@ pub struct FilterBuilder<Name, Action> {
 
     display_data_name_buffer: Arc<[u16]>,
     display_data_desc_buffer: Arc<[u16]>,
+    provider_key: Option<Arc<GUID>>,
     conditions: Vec<Condition>,
     weight_value: u64,
 
@@ -94,6 +95,7 @@ impl Default for FilterBuilder<FilterBuilderMissingName, FilterBuilderMissingAct
             filter: Default::default(),
             display_data_name_buffer: Default::default(),
             display_data_desc_buffer: Default::default(),
+            provider_key: None,
             conditions: Default::default(),
             weight_value: 0,
             _pd: Default::default(),
@@ -121,6 +123,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             filter: self.filter,
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
+            provider_key: self.provider_key,
             conditions: self.conditions,
             weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
@@ -142,6 +145,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             filter: self.filter,
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
+            provider_key: self.provider_key,
             conditions: self.conditions,
             weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
@@ -159,6 +163,7 @@ impl<Name, Action> FilterBuilder<Name, Action> {
             filter: self.filter,
             display_data_name_buffer: self.display_data_name_buffer,
             display_data_desc_buffer: self.display_data_desc_buffer,
+            provider_key: self.provider_key,
             conditions: self.conditions,
             weight_value: self.weight_value,
             _pd: std::marker::PhantomData,
@@ -196,6 +201,19 @@ impl<Name, Action> FilterBuilder<Name, Action> {
     /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
     pub fn sublayer(mut self, sublayer: GUID) -> FilterBuilder<Name, Action> {
         self.filter.subLayerKey = sublayer;
+        self
+    }
+
+    /// Attaches the filter to a provider.
+    ///
+    /// This sets the `providerKey` field in the underlying [`FWPM_FILTER0`] structure.
+    ///
+    /// [`FWPM_FILTER0`]: https://docs.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0
+    pub fn provider(mut self, guid: GUID) -> FilterBuilder<Name, Action> {
+        let key = Arc::new(guid);
+        // SAFETY: The data is never mutated; the Arc keeps the GUID alive as long as `self` lives.
+        self.filter.providerKey = Arc::as_ptr(&key) as *mut _;
+        self.provider_key = Some(key);
         self
     }
 

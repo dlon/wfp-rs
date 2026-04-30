@@ -241,10 +241,7 @@ impl<Value> IcmpConditionBuilder<Value> {
     }
 
     /// Creates a condition that matches values greater than or equal to the given value.
-    pub fn greater_or_equal(
-        self,
-        value: u8,
-    ) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
+    pub fn greater_or_equal(self, value: u8) -> IcmpConditionBuilder<IcmpConditionBuilderHasValue> {
         IcmpConditionBuilder {
             builder: self
                 .builder

@@ -63,6 +63,52 @@ fn test_add_filters_and_sublayer() {
 
 #[test]
 #[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
+fn test_add_provider_and_attach_filters() {
+    let mut engine = FilterEngineBuilder::default()
+        .dynamic()
+        .open()
+        .expect("Should be able to open filter engine");
+
+    let transaction = Transaction::new(&mut engine).expect("Should be able to create transaction");
+
+    let test_provider_guid = GUID::from_u128(0xdeadbeef_1111_2222_3333_444455556666);
+    let test_sublayer_guid = GUID::from_u128(0xdeadbeef_aaaa_bbbb_cccc_ddddeeeeffff);
+    let test_filter_guid = GUID::from_u128(0xdeadbeef_1234_5678_9abc_def012345678);
+
+    ProviderBuilder::default()
+        .name("Test Provider")
+        .description("Provider for integration tests")
+        .guid(test_provider_guid)
+        .add(&transaction)
+        .expect("Should be able to add provider");
+
+    SubLayerBuilder::default()
+        .name("Test Provider Sublayer")
+        .description("Sublayer attached to test provider")
+        .weight(100)
+        .guid(test_sublayer_guid)
+        .provider(test_provider_guid)
+        .add(&transaction)
+        .expect("Should be able to add sublayer");
+
+    FilterBuilder::default()
+        .name("Test Provider Filter")
+        .description("Filter attached to test provider")
+        .action(ActionType::Block)
+        .layer(Layer::ConnectV4)
+        .sublayer(test_sublayer_guid)
+        .provider(test_provider_guid)
+        .guid(test_filter_guid)
+        .add(&transaction)
+        .expect("Should be able to add filter");
+
+    transaction
+        .commit()
+        .expect("Should be able to commit provider transaction");
+}
+
+#[test]
+#[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
 fn test_app_id_condition() {
     let mut engine = FilterEngineBuilder::default()
         .dynamic()
