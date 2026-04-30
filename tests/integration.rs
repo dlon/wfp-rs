@@ -1,5 +1,7 @@
 //! Integration tests for the Windows Filtering Platform library.
 
+use std::net::{Ipv4Addr, Ipv6Addr};
+
 use windows_sys::core::GUID;
 
 // Import the library modules we want to test
@@ -262,4 +264,57 @@ fn test_local_interface_condition() {
     transaction
         .commit()
         .expect("Should be able to commit interface filter transaction");
+}
+
+#[test]
+#[cfg_attr(not(feature = "wfp-integration-tests"), ignore)]
+fn test_ip_address_subnet_condition() {
+    let mut engine = FilterEngineBuilder::default()
+        .dynamic()
+        .open()
+        .expect("Should be able to open filter engine");
+
+    let transaction = Transaction::new(&mut engine).expect("Should be able to create transaction");
+
+    let test_guid = GUID::from_u128(0xbbccddee_1234_5678_9abc_def012345678);
+
+    SubLayerBuilder::default()
+        .name("Test IP Address Sublayer")
+        .description("Test sublayer for IP-prefix integration tests")
+        .weight(100)
+        .guid(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add sublayer");
+
+    FilterBuilder::default()
+        .name("Permit 192.168.0.0/16")
+        .description("Permits the 192.168/16 range")
+        .action(ActionType::Permit)
+        .layer(Layer::ConnectV4)
+        .condition(
+            IpAddressConditionBuilder::remote()
+                .subnet_v4(Ipv4Addr::new(192, 168, 0, 0), 16)
+                .build(),
+        )
+        .sublayer(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add v4 LAN filter");
+
+    FilterBuilder::default()
+        .name("Permit fe80::/10")
+        .description("Permits the IPv6 link-local range")
+        .action(ActionType::Permit)
+        .layer(Layer::ConnectV6)
+        .condition(
+            IpAddressConditionBuilder::remote()
+                .subnet_v6("fe80::".parse::<Ipv6Addr>().unwrap(), 10)
+                .build(),
+        )
+        .sublayer(test_guid)
+        .add(&transaction)
+        .expect("Should be able to add v6 link-local filter");
+
+    transaction
+        .commit()
+        .expect("Should be able to commit IP-address filter transaction");
 }

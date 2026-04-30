@@ -2,6 +2,7 @@
 
 use std::ffi::OsStr;
 use std::io;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
@@ -10,7 +11,8 @@ use windows_sys::Win32::NetworkManagement::Ndis::NET_LUID_LH;
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
     FWP_BYTE_BLOB_TYPE, FWP_MATCH_EQUAL, FWP_MATCH_GREATER, FWP_MATCH_GREATER_OR_EQUAL,
     FWP_MATCH_LESS, FWP_MATCH_LESS_OR_EQUAL, FWP_MATCH_RANGE, FWP_UINT8, FWP_UINT16, FWP_UINT32,
-    FWP_UINT64, FWP_UNICODE_STRING_TYPE, FWPM_CONDITION_ALE_APP_ID,
+    FWP_UINT64, FWP_UNICODE_STRING_TYPE, FWP_V4_ADDR_AND_MASK, FWP_V4_ADDR_MASK,
+    FWP_V6_ADDR_AND_MASK, FWP_V6_ADDR_MASK, FWPM_CONDITION_ALE_APP_ID,
     FWPM_CONDITION_IP_LOCAL_ADDRESS, FWPM_CONDITION_IP_LOCAL_INTERFACE,
     FWPM_CONDITION_IP_LOCAL_PORT, FWPM_CONDITION_IP_PROTOCOL, FWPM_CONDITION_IP_REMOTE_ADDRESS,
     FWPM_CONDITION_IP_REMOTE_PORT, FWPM_FILTER_CONDITION0,
@@ -429,6 +431,141 @@ impl InterfaceConditionBuilder<InterfaceConditionBuilderHasValue> {
     }
 }
 
+/// Typed builder for IP address (subnet/prefix) conditions.
+///
+/// This builder produces conditions that match the local or remote IP address
+/// of a connection against an IPv4 or IPv6 contiguous prefix, using the
+/// [`FWP_V4_ADDR_MASK`] / [`FWP_V6_ADDR_MASK`] WFP value types. A single host
+/// match (e.g. a specific DNS server) is expressed as a `/32` or `/128`
+/// prefix.
+///
+/// `subnet_v4` is intended for use on an IPv4 layer such as
+/// [`Layer::ConnectV4`](crate::Layer::ConnectV4); `subnet_v6` is intended
+/// for an IPv6 layer such as [`Layer::ConnectV6`](crate::Layer::ConnectV6).
+///
+/// # Example
+///
+/// Permit outbound IPv4 connections to the `192.168.0.0/16` private range.
+/// Conditions on the same field on a single filter are combined with
+/// logical OR, so additional `subnet_v4(...)` conditions can be chained
+/// onto the same `FilterBuilder` to permit more prefixes.
+///
+/// ```no_run
+/// use std::net::Ipv4Addr;
+/// use wfp::{ActionType, FilterBuilder, IpAddressConditionBuilder, Layer};
+///
+/// let filter = FilterBuilder::default()
+///     .name("Permit 192.168.0.0/16")
+///     .action(ActionType::Permit)
+///     .layer(Layer::ConnectV4)
+///     .condition(
+///         IpAddressConditionBuilder::remote()
+///             .subnet_v4(Ipv4Addr::new(192, 168, 0, 0), 16)
+///             .build(),
+///     );
+/// ```
+#[derive(Clone)]
+pub struct IpAddressConditionBuilder<Value> {
+    builder: ConditionBuilder,
+    _pd: std::marker::PhantomData<Value>,
+}
+
+/// Type-state marker indicating the IP address value has not been set.
+#[doc(hidden)]
+pub struct IpAddressConditionBuilderMissingValue;
+
+/// Type-state marker indicating the IP address value has been set.
+#[doc(hidden)]
+pub struct IpAddressConditionBuilderHasValue;
+
+impl IpAddressConditionBuilder<IpAddressConditionBuilderMissingValue> {
+    /// Match against the remote IP address
+    /// (`FWPM_CONDITION_IP_REMOTE_ADDRESS`).
+    pub fn remote() -> Self {
+        Self {
+            builder: ConditionBuilder::default().field(ConditionField::RemoteAddress),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Match against the local IP address
+    /// (`FWPM_CONDITION_IP_LOCAL_ADDRESS`).
+    pub fn local() -> Self {
+        Self {
+            builder: ConditionBuilder::default().field(ConditionField::LocalAddress),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<V> IpAddressConditionBuilder<V> {
+    /// Match an IPv4 prefix `addr/prefix_len`.
+    ///
+    /// Use this on an IPv4 layer such as
+    /// [`Layer::ConnectV4`](crate::Layer::ConnectV4).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `prefix_len > 32`.
+    pub fn subnet_v4(
+        self,
+        addr: Ipv4Addr,
+        prefix_len: u8,
+    ) -> IpAddressConditionBuilder<IpAddressConditionBuilderHasValue> {
+        let mask = v4_prefix_to_mask(prefix_len);
+        IpAddressConditionBuilder {
+            builder: self
+                .builder
+                .match_type(MatchType::Equal)
+                .value_v4_addr_mask(u32::from(addr), mask),
+            _pd: std::marker::PhantomData,
+        }
+    }
+
+    /// Match an IPv6 prefix `addr/prefix_len`.
+    ///
+    /// Use this on an IPv6 layer such as
+    /// [`Layer::ConnectV6`](crate::Layer::ConnectV6).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `prefix_len > 128`.
+    pub fn subnet_v6(
+        self,
+        addr: Ipv6Addr,
+        prefix_len: u8,
+    ) -> IpAddressConditionBuilder<IpAddressConditionBuilderHasValue> {
+        assert!(prefix_len <= 128, "IPv6 prefix length must be <= 128");
+        IpAddressConditionBuilder {
+            builder: self
+                .builder
+                .match_type(MatchType::Equal)
+                .value_v6_addr_mask(addr.octets(), prefix_len),
+            _pd: std::marker::PhantomData,
+        }
+    }
+}
+
+impl IpAddressConditionBuilder<IpAddressConditionBuilderHasValue> {
+    /// Builds the condition.
+    ///
+    /// This method is only available once a subnet has been set with
+    /// [`subnet_v4`](Self::subnet_v4) or [`subnet_v6`](Self::subnet_v6).
+    pub fn build(self) -> Condition {
+        self.builder.build().expect("condition should be valid")
+    }
+}
+
+/// Convert an IPv4 prefix length into a contiguous host-byte-order mask.
+fn v4_prefix_to_mask(prefix_len: u8) -> u32 {
+    assert!(prefix_len <= 32, "IPv4 prefix length must be <= 32");
+    if prefix_len == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix_len)
+    }
+}
+
 /// Specifies how a condition value should be matched against network traffic.
 ///
 /// These correspond to the [`FWP_MATCH_TYPE`] enumeration values.
@@ -533,6 +670,8 @@ enum ConditionValue {
     UInt8(u8),
     String(Vec<u16>),
     ByteBlob { blob: OwnedByteBlob },
+    V4AddrMask(FWP_V4_ADDR_AND_MASK),
+    V6AddrMask(FWP_V6_ADDR_AND_MASK),
 }
 
 impl ConditionBuilder {
@@ -601,6 +740,30 @@ impl ConditionBuilder {
         self
     }
 
+    /// Sets an IPv4 address-and-mask value for the condition.
+    ///
+    /// `addr` and `mask` are in host byte order, matching the in-memory layout
+    /// of [`FWP_V4_ADDR_AND_MASK`].
+    pub fn value_v4_addr_mask(mut self, addr: u32, mask: u32) -> Self {
+        self.value = Some(ConditionValue::V4AddrMask(FWP_V4_ADDR_AND_MASK { addr, mask }).into());
+        self
+    }
+
+    /// Sets an IPv6 address-and-prefix-length value for the condition.
+    ///
+    /// `addr` is the address in network byte order, matching the in-memory
+    /// layout of [`FWP_V6_ADDR_AND_MASK`].
+    pub fn value_v6_addr_mask(mut self, addr: [u8; 16], prefix_length: u8) -> Self {
+        self.value = Some(
+            ConditionValue::V6AddrMask(FWP_V6_ADDR_AND_MASK {
+                addr,
+                prefixLength: prefix_length,
+            })
+            .into(),
+        );
+        self
+    }
+
     /// Builds the condition into the internal representation used by FilterBuilder.
     pub fn build(self) -> Option<Condition> {
         let field = self.field?;
@@ -642,6 +805,22 @@ impl ConditionBuilder {
                 // SAFETY: The data is never mutated, and is tied to the lifetime of Condition
                 raw_condition.conditionValue.Anonymous.byteBlob = blob.as_ptr() as _;
             }
+            ConditionValue::V4AddrMask(addr_and_mask) => {
+                raw_condition.conditionValue.r#type = FWP_V4_ADDR_MASK;
+                // SAFETY: The data is never mutated, and is tied to the lifetime of Condition
+                // (the Arc<ConditionValue> in `_value` keeps the variant payload alive at a
+                // stable address).
+                raw_condition.conditionValue.Anonymous.v4AddrMask =
+                    addr_and_mask as *const _ as *mut _;
+            }
+            ConditionValue::V6AddrMask(addr_and_mask) => {
+                raw_condition.conditionValue.r#type = FWP_V6_ADDR_MASK;
+                // SAFETY: The data is never mutated, and is tied to the lifetime of Condition
+                // (the Arc<ConditionValue> in `_value` keeps the variant payload alive at a
+                // stable address).
+                raw_condition.conditionValue.Anonymous.v6AddrMask =
+                    addr_and_mask as *const _ as *mut _;
+            }
         }
 
         Some(Condition {
@@ -670,28 +849,25 @@ impl Condition {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use super::*;
+
+    fn assert_field_key_eq(actual: &GUID, expected: &GUID) {
+        assert_eq!(actual.data1, expected.data1);
+        assert_eq!(actual.data2, expected.data2);
+        assert_eq!(actual.data3, expected.data3);
+        assert_eq!(actual.data4, expected.data4);
+    }
 
     #[test]
     fn test_condition_local_interface_luid() {
         let luid: u64 = 0xDEAD_BEEF_1234_5678;
         let condition = InterfaceConditionBuilder::local().luid(luid).build();
 
-        assert_eq!(
-            condition.raw_condition.fieldKey.data1,
-            FWPM_CONDITION_IP_LOCAL_INTERFACE.data1
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data2,
-            FWPM_CONDITION_IP_LOCAL_INTERFACE.data2
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data3,
-            FWPM_CONDITION_IP_LOCAL_INTERFACE.data3
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data4,
-            FWPM_CONDITION_IP_LOCAL_INTERFACE.data4
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_LOCAL_INTERFACE,
         );
 
         assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
@@ -722,21 +898,9 @@ mod test {
     fn test_condition_port_remote() {
         let condition = PortConditionBuilder::remote().equal(80).build();
 
-        assert_eq!(
-            condition.raw_condition.fieldKey.data1,
-            FWPM_CONDITION_IP_REMOTE_PORT.data1
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data2,
-            FWPM_CONDITION_IP_REMOTE_PORT.data2
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data3,
-            FWPM_CONDITION_IP_REMOTE_PORT.data3
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data4,
-            FWPM_CONDITION_IP_REMOTE_PORT.data4
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_REMOTE_PORT,
         );
 
         assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
@@ -750,22 +914,7 @@ mod test {
     fn test_icmp_type_condition_equal() {
         let condition = IcmpConditionBuilder::r#type().equal(135).build();
 
-        assert_eq!(
-            condition.raw_condition.fieldKey.data1,
-            FWPM_CONDITION_ICMP_TYPE.data1
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data2,
-            FWPM_CONDITION_ICMP_TYPE.data2
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data3,
-            FWPM_CONDITION_ICMP_TYPE.data3
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data4,
-            FWPM_CONDITION_ICMP_TYPE.data4
-        );
+        assert_field_key_eq(&condition.raw_condition.fieldKey, &FWPM_CONDITION_ICMP_TYPE);
 
         assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
         assert_eq!(condition.raw_condition.conditionValue.r#type, FWP_UINT16);
@@ -779,22 +928,7 @@ mod test {
     fn test_icmp_code_condition_equal() {
         let condition = IcmpConditionBuilder::code().equal(0).build();
 
-        assert_eq!(
-            condition.raw_condition.fieldKey.data1,
-            FWPM_CONDITION_ICMP_CODE.data1
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data2,
-            FWPM_CONDITION_ICMP_CODE.data2
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data3,
-            FWPM_CONDITION_ICMP_CODE.data3
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data4,
-            FWPM_CONDITION_ICMP_CODE.data4
-        );
+        assert_field_key_eq(&condition.raw_condition.fieldKey, &FWPM_CONDITION_ICMP_CODE);
 
         assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
         assert_eq!(condition.raw_condition.conditionValue.r#type, FWP_UINT16);
@@ -808,21 +942,9 @@ mod test {
     fn test_icmpv6_protocol_condition() {
         let condition = ProtocolConditionBuilder::icmpv6().build();
 
-        assert_eq!(
-            condition.raw_condition.fieldKey.data1,
-            FWPM_CONDITION_IP_PROTOCOL.data1
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data2,
-            FWPM_CONDITION_IP_PROTOCOL.data2
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data3,
-            FWPM_CONDITION_IP_PROTOCOL.data3
-        );
-        assert_eq!(
-            condition.raw_condition.fieldKey.data4,
-            FWPM_CONDITION_IP_PROTOCOL.data4
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_PROTOCOL,
         );
 
         assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
@@ -831,5 +953,89 @@ mod test {
             unsafe { condition.raw_condition.conditionValue.Anonymous.uint8 },
             58
         );
+    }
+
+    #[test]
+    fn test_v4_prefix_to_mask() {
+        assert_eq!(v4_prefix_to_mask(0), 0x00000000);
+        assert_eq!(v4_prefix_to_mask(8), 0xFF000000);
+        assert_eq!(v4_prefix_to_mask(16), 0xFFFF0000);
+        assert_eq!(v4_prefix_to_mask(24), 0xFFFFFF00);
+        assert_eq!(v4_prefix_to_mask(32), 0xFFFFFFFF);
+    }
+
+    #[test]
+    #[should_panic(expected = "IPv4 prefix length must be <= 32")]
+    fn test_v4_prefix_to_mask_too_large() {
+        let _ = v4_prefix_to_mask(33);
+    }
+
+    #[test]
+    fn test_subnet_v4_remote() {
+        let condition = IpAddressConditionBuilder::remote()
+            .subnet_v4(Ipv4Addr::new(192, 168, 0, 0), 16)
+            .build();
+
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_REMOTE_ADDRESS,
+        );
+        assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
+        assert_eq!(
+            condition.raw_condition.conditionValue.r#type,
+            FWP_V4_ADDR_MASK
+        );
+
+        let v4 = unsafe { &*condition.raw_condition.conditionValue.Anonymous.v4AddrMask };
+        assert_eq!(v4.addr, 0xC0A80000);
+        assert_eq!(v4.mask, 0xFFFF0000);
+    }
+
+    #[test]
+    fn test_subnet_v4_local() {
+        let condition = IpAddressConditionBuilder::local()
+            .subnet_v4(Ipv4Addr::new(127, 0, 0, 0), 8)
+            .build();
+
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_LOCAL_ADDRESS,
+        );
+        let v4 = unsafe { &*condition.raw_condition.conditionValue.Anonymous.v4AddrMask };
+        assert_eq!(v4.addr, 0x7F000000);
+        assert_eq!(v4.mask, 0xFF000000);
+    }
+
+    #[test]
+    fn test_subnet_v6_remote() {
+        let condition = IpAddressConditionBuilder::remote()
+            .subnet_v6(Ipv6Addr::from_str("fe80::").unwrap(), 10)
+            .build();
+
+        assert_field_key_eq(
+            &condition.raw_condition.fieldKey,
+            &FWPM_CONDITION_IP_REMOTE_ADDRESS,
+        );
+        assert_eq!(condition.raw_condition.matchType, FWP_MATCH_EQUAL);
+        assert_eq!(
+            condition.raw_condition.conditionValue.r#type,
+            FWP_V6_ADDR_MASK
+        );
+
+        let v6 = unsafe { &*condition.raw_condition.conditionValue.Anonymous.v6AddrMask };
+        assert_eq!(v6.addr[0], 0xfe);
+        assert_eq!(v6.addr[1], 0x80);
+        for byte in &v6.addr[2..] {
+            assert_eq!(*byte, 0);
+        }
+        assert_eq!(v6.prefixLength, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "IPv6 prefix length must be <= 128")]
+    fn test_subnet_v6_prefix_too_large() {
+        let _ = IpAddressConditionBuilder::remote()
+            .subnet_v6(Ipv6Addr::UNSPECIFIED, 129)
+            .build();
     }
 }
